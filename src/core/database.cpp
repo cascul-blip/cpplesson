@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 )sql";
 const int SCHEMA_VERSION = 1;
+
+const char *const NEWER_DATABASE =
+    "This database was written by a newer Lesson Planner. Update this computer.";
+
+int schemaVersion(sqlite3 *db)
+{
+    Statement statement(db, "PRAGMA user_version");
+    statement.step();
+    return statement.integer(0);
+}
 const int BUSY_TIMEOUT_MS = 10000;
 
 [[noreturn]] void fail(sqlite3 *db)
@@ -175,8 +185,12 @@ Database::Database(const QString &path, DbOpen mode) : m_path(path)
     }
     try {
         sqlite3_busy_timeout(m_db, BUSY_TIMEOUT_MS);
-        exec("PRAGMA journal_mode=DELETE");
         exec("PRAGMA foreign_keys=ON");
+        // Before journal_mode or CREATE TABLE. Either of those would write a
+        // file this version of the program does not understand.
+        if (schemaVersion(m_db) > SCHEMA_VERSION)
+            throw DbError(NEWER_DATABASE);
+        exec("PRAGMA journal_mode=DELETE");
         initSchema();
     } catch (...) {
         close();

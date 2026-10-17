@@ -208,6 +208,28 @@ private slots:
         QCOMPARE(m_db->generation(), generation + 1);
     }
 
+    void newerDatabaseIsRefusedUnchanged()
+    {
+        const QString path = m_db->path();
+        m_db->exec("PRAGMA user_version=2");
+        m_db.reset();
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QByteArray before = file.readAll();
+        file.close();
+
+        try {
+            Database again(path);
+            QFAIL("opened a database from a newer program");
+        } catch (const DbError &error) {
+            QVERIFY(QString::fromUtf8(error.what()).contains(
+                QStringLiteral("newer Lesson Planner")));
+        }
+
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), before);
+    }
+
     void badRetentionFallsBackToDefault()
     {
         m_db->setSetting(QStringLiteral("backup_retention_days"), QStringLiteral("nope"));
