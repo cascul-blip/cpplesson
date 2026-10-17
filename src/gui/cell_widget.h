@@ -43,11 +43,14 @@ public:
     void setEntry(const Entry &entry, bool force = false);
     bool hasEditFocus() const;
     void setReadOnly(bool readOnly);
+    bool isDirty() const { return m_dirty; }
     void flush();
     void focusLesson();
 
 signals:
-    void changed(const Entry &entry);
+    // `saved` is set when a receiver has stored the entry. It stays false when
+    // the save is refused (read-only) or throws.
+    void changed(const Entry &entry, bool *saved);
     // The receiver takes over `standardMenu` (the editor's own cut/copy/paste menu).
     void menuRequested(int classId, QDate day, QPoint globalPos, QMenu *standardMenu);
 

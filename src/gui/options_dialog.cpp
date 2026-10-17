@@ -198,3 +198,25 @@ std::optional<QString> chooseInitialFolder(QWidget *parent)
         parent, QStringLiteral("Database folder"), QDir::homePath());
     return folder.isEmpty() ? std::nullopt : std::optional<QString>(folder);
 }
+
+MissingDbChoice askAboutMissingDatabase(const QString &folder, QWidget *parent)
+{
+    QMessageBox box(QMessageBox::Question, QStringLiteral("Lesson Planner"),
+                    QStringLiteral("No lesson database in %1.\n\n"
+                                   "Create a new one here, or choose the folder that already has "
+                                   "lessonplanner.db. If this folder syncs from another computer, "
+                                   "wait until Nextcloud has finished.")
+                        .arg(QDir::toNativeSeparators(folder)),
+                    QMessageBox::NoButton, parent);
+    auto *create = box.addButton(QStringLiteral("Create a new one"), QMessageBox::AcceptRole);
+    auto *choose = box.addButton(QStringLiteral("Choose another folder"), QMessageBox::ActionRole);
+    auto *quit = box.addButton(QStringLiteral("Quit"), QMessageBox::RejectRole);
+    box.setDefaultButton(quit);
+    box.setEscapeButton(quit);
+    box.exec();
+    if (box.clickedButton() == create)
+        return MissingDbChoice::Create;
+    if (box.clickedButton() == choose)
+        return MissingDbChoice::ChooseFolder;
+    return MissingDbChoice::Quit;
+}

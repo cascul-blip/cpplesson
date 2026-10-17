@@ -84,6 +84,15 @@ void WeekView::flush()
         cell->flush();
 }
 
+bool WeekView::hasUnsaved() const
+{
+    for (CellWidget *cell : std::as_const(m_cells)) {
+        if (cell->isDirty())
+            return true;
+    }
+    return false;
+}
+
 void WeekView::setReadOnly(bool readOnly)
 {
     m_readOnly = readOnly;

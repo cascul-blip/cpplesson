@@ -1,6 +1,7 @@
 #include "core/database.h"
 #include "core/schedule.h"
 
+#include <QFile>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -38,7 +39,8 @@ private slots:
     void init()
     {
         m_dir = std::make_unique<QTemporaryDir>();
-        m_db = std::make_unique<Database>(m_dir->filePath(QStringLiteral("lessonplanner.db")));
+        m_db = std::make_unique<Database>(m_dir->filePath(QStringLiteral("lessonplanner.db")),
+                                         DbOpen::Create);
     }
 
     void cleanup()
@@ -140,6 +142,27 @@ private slots:
         QCOMPARE(lessons(1), (Lessons{{THU, "Lesson 1"}}));
         QCOMPARE(m_db->backupRetentionDays(), 7);
         QCOMPARE(m_db->classes().size(), 7);  // defaults are not added twice
+    }
+
+    void missingDatabaseIsNotCreated()
+    {
+        const QString path = m_dir->filePath(QStringLiteral("absent.db"));
+        QVERIFY_THROWS_EXCEPTION(DbError, std::make_unique<Database>(path));
+        QVERIFY(!QFile::exists(path));
+        Database created(path, DbOpen::Create);
+        QVERIFY(QFile::exists(path));
+        Database again(path);
+        QCOMPARE(again.classes().size(), 7);
+    }
+
+    void badRetentionFallsBackToDefault()
+    {
+        m_db->setSetting(QStringLiteral("backup_retention_days"), QStringLiteral("nope"));
+        QCOMPARE(m_db->backupRetentionDays(), 30);
+        m_db->setSetting(QStringLiteral("backup_retention_days"), QStringLiteral("-5"));
+        QCOMPARE(m_db->backupRetentionDays(), 30);
+        m_db->setSetting(QStringLiteral("backup_retention_days"), QStringLiteral("0"));
+        QCOMPARE(m_db->backupRetentionDays(), 30);
     }
 };
 

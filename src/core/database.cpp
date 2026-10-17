@@ -159,9 +159,12 @@ void Transaction::commit()
 
 // --- Database ----------------------------------------------------------------
 
-Database::Database(const QString &path) : m_path(path)
+Database::Database(const QString &path, DbOpen mode) : m_path(path)
 {
-    if (sqlite3_open(path.toUtf8().constData(), &m_db) != SQLITE_OK) {
+    int flags = SQLITE_OPEN_READWRITE;
+    if (mode == DbOpen::Create)
+        flags |= SQLITE_OPEN_CREATE;
+    if (sqlite3_open_v2(path.toUtf8().constData(), &m_db, flags, nullptr) != SQLITE_OK) {
         const DbError error(m_db ? sqlite3_errmsg(m_db) : "out of memory");
         close();
         throw error;
@@ -252,7 +255,14 @@ QDate Database::week1Monday()
 
 int Database::backupRetentionDays()
 {
-    return setting(QStringLiteral("backup_retention_days")).toInt();
+    bool ok = false;
+    const int days = setting(QStringLiteral("backup_retention_days")).toInt(&ok);
+    const int fallback =
+        defaultSettings().value(QStringLiteral("backup_retention_days")).toInt();
+    // "0", a negative number, or text would make prune() delete every backup.
+    if (!ok || days < 1)
+        return fallback;
+    return days;
 }
 
 // --- classes -----------------------------------------------------------------

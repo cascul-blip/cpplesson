@@ -28,8 +28,9 @@ cmake --build build -j
 ```
 
 On first run the app asks for the database folder, e.g. `~/Nextcloud/Documents/School`.
-This choice is saved per computer (File → Options). Set `LESSONPLANNER_DB_FOLDER` to
-override it for one run.
+If that folder has no `lessonplanner.db`, it asks before creating one. This choice is
+saved per computer (File → Options). Set `LESSONPLANNER_DB_FOLDER` to override it for
+one run.
 
 ## Using it
 

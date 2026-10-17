@@ -63,6 +63,9 @@ std::optional<QString> runDailyBackup(Database &db, const QString &folder, int r
 
 QStringList prune(const QString &folder, int retentionDays, QDate today)
 {
+    // Same default as the database setting. A bad value must not delete everything.
+    if (retentionDays < 1)
+        retentionDays = 30;
     const QDate cutoff = today.addDays(-retentionDays);
     const QDir dir(folder);
     QStringList removed;

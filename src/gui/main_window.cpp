@@ -141,7 +141,10 @@ void MainWindow::buildMenus()
     viewMenu->addAction(QStringLiteral("&Add next week"), QKeySequence(QStringLiteral("Ctrl+N")),
                         this, &MainWindow::addNextWeek);
     viewMenu->addAction(QStringLiteral("&Reload"), QKeySequence(QKeySequence::Refresh), this,
-                        [this] { refreshAll(true); });
+                        [this] {
+                            flushAll();
+                            refreshAll(true);
+                        });
 }
 
 // --- weeks / tabs ------------------------------------------------------------
@@ -222,6 +225,15 @@ void MainWindow::flushAll()
         weekView->flush();
 }
 
+bool MainWindow::hasUnsaved() const
+{
+    for (WeekView *weekView : std::as_const(m_views)) {
+        if (weekView->hasUnsaved())
+            return true;
+    }
+    return false;
+}
+
 void MainWindow::refreshAll(bool force)
 {
     for (WeekView *weekView : std::as_const(m_views)) {
@@ -242,11 +254,15 @@ void MainWindow::afterChange(const QString &message)
 
 // --- editing -----------------------------------------------------------------
 
-void MainWindow::saveEntry(const Entry &entry)
+void MainWindow::saveEntry(const Entry &entry, bool *saved)
 {
+    if (saved)
+        *saved = false;
     if (m_readOnly || m_closed)
         return;
     m_db->saveEntry(entry);
+    if (saved)
+        *saved = true;
     m_dataVersion = m_db->dataVersion();
     if (!m_tabWeeks.contains(schoolcal::mondayOf(entry.date)))
         rebuildTabs();
@@ -475,11 +491,11 @@ void MainWindow::poll()
         return;
     const std::optional<FileId> file = fileIdentity(m_db->path());
     if (file && file != m_dbFile) {
-        // the sync client swapped in a new file; reopen it
+        // the sync client swapped in a new file; reopen it, never creating one
         flushAll();
         std::unique_ptr<Database> fresh;
         try {
-            fresh = std::make_unique<Database>(m_db->path());
+            fresh = std::make_unique<Database>(m_db->path(), DbOpen::Existing);
         } catch (const DbError &) {
             return;  // probably still being written; look again on the next tick
         }
@@ -604,13 +620,34 @@ void MainWindow::openOptions()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (!m_closed) {
+        for (;;) {
+            QString failure;
+            try {
+                flushAll();
+            } catch (const std::exception &error) {
+                failure = QString::fromUtf8(error.what());
+            }
+            if (failure.isEmpty() && !hasUnsaved())
+                break;
+            const QString text = failure.isEmpty()
+                ? QStringLiteral("The last edit was not saved. Quit anyway and lose it?")
+                : QStringLiteral("The last edit could not be saved:\n%1\n\nQuit anyway and lose it?")
+                      .arg(failure);
+            QMessageBox box(QMessageBox::Warning, TITLE, text, QMessageBox::NoButton, this);
+            auto *retry = box.addButton(QStringLiteral("Retry"), QMessageBox::AcceptRole);
+            auto *quit = box.addButton(QStringLiteral("Quit anyway"), QMessageBox::DestructiveRole);
+            auto *cancel = box.addButton(QMessageBox::Cancel);
+            box.setDefaultButton(retry);
+            box.exec();
+            if (box.clickedButton() == cancel) {
+                event->ignore();
+                return;
+            }
+            if (box.clickedButton() == quit)
+                break;
+        }
         for (QTimer *timer : {m_pollTimer, m_heartbeatTimer, m_backupTimer})
             timer->stop();
-        try {
-            flushAll();
-        } catch (const std::exception &) {
-            // nothing more can be done for an edit that will not save on the way out
-        }
         hide();  // the tablet export below can take a few seconds
         if (m_tabletTimer->isActive()) {
             m_tabletTimer->stop();

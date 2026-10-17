@@ -46,10 +46,11 @@ public:
     // Cells being edited keep their text unless `force`.
     void reload(bool force = false);
     void flush();
+    bool hasUnsaved() const;
     void setReadOnly(bool readOnly);
 
 signals:
-    void entryChanged(const Entry &entry);
+    void entryChanged(const Entry &entry, bool *saved);
     void cellMenuRequested(int classId, QDate day, QPoint globalPos, QMenu *standardMenu);
     void noSchoolMenuRequested(QDate day, QPoint globalPos);
 

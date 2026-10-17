@@ -48,11 +48,12 @@ private:
     void goToCurrentWeek();
     void addNextWeek();
     void flushAll();
+    bool hasUnsaved() const;
     void refreshAll(bool force = false);
     void afterChange(const QString &message = {});
 
     // editing
-    void saveEntry(const Entry &entry);
+    void saveEntry(const Entry &entry, bool *saved);
     QString className(int classId);
     void cellMenu(int classId, QDate day, QPoint pos, QMenu *standardMenu);
     void noSchoolMenu(QDate day, QPoint pos);
