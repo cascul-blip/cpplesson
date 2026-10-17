@@ -15,7 +15,6 @@ private slots:
         QCOMPARE(schoolcal::weekNumber(QDate(2026, 9, 7), week1), 1);
         QCOMPARE(schoolcal::weekNumber(QDate(2026, 9, 4), week1), 0);  // the Friday before
         QCOMPARE(schoolcal::weekNumber(QDate(2026, 8, 24), week1), -1);
-        QCOMPARE(schoolcal::weekMonday(5, week1), QDate(2026, 10, 5));
         QCOMPARE(schoolcal::weekLabel(QDate(2026, 9, 28), week1), QStringLiteral("Week 4 · Sep 28"));
     }
 

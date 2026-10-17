@@ -290,14 +290,11 @@ int Database::backupRetentionDays()
 QList<ClassInfo> Database::classes(bool includeInactive)
 {
     Statement statement(m_db, includeInactive
-        ? "SELECT id, name, sort_order, active FROM classes ORDER BY sort_order, id"
-        : "SELECT id, name, sort_order, active FROM classes WHERE active=1 "
-          "ORDER BY sort_order, id");
+        ? "SELECT id, name, active FROM classes ORDER BY sort_order, id"
+        : "SELECT id, name, active FROM classes WHERE active=1 ORDER BY sort_order, id");
     QList<ClassInfo> result;
-    while (statement.step()) {
-        result.append({statement.integer(0), statement.text(1), statement.integer(2),
-                       statement.integer(3) != 0});
-    }
+    while (statement.step())
+        result.append({statement.integer(0), statement.text(1), statement.integer(2) != 0});
     return result;
 }
 

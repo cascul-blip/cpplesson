@@ -19,7 +19,6 @@ QDate mondayOf(QDate day);
 // Monday of the current week; on weekends, the upcoming week.
 QDate currentMonday(QDate today = QDate::currentDate());
 int weekNumber(QDate monday, QDate week1Monday);
-QDate weekMonday(int number, QDate week1Monday);
 QList<QDate> weekDays(QDate monday);
 QString weekLabel(QDate monday, QDate week1Monday);
 

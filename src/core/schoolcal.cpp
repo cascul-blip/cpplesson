@@ -28,11 +28,6 @@ int weekNumber(QDate monday, QDate week1Monday)
     return int(weeks) + 1;
 }
 
-QDate weekMonday(int number, QDate week1Monday)
-{
-    return week1Monday.addDays(7 * (number - 1));
-}
-
 QList<QDate> weekDays(QDate monday)
 {
     QList<QDate> days;

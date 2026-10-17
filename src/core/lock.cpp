@@ -1,5 +1,6 @@
 #include "core/lock.h"
 
+#include "core/replace.h"
 #include "core/schoolcal.h"
 
 #include <QCoreApplication>
@@ -8,7 +9,6 @@
 #include <QJsonObject>
 #include <QSysInfo>
 
-#include <filesystem>
 #include <stdexcept>
 
 namespace lock {
@@ -120,14 +120,7 @@ void Lock::write()
             QStringLiteral("Could not write %1: %2").arg(tmp, file.errorString()).toStdString());
     }
     file.close();
-    std::error_code error;
-    std::filesystem::rename(std::filesystem::path(tmp.toStdU16String()),
-                            std::filesystem::path(m_path.toStdU16String()), error);
-    if (error) {
-        throw std::runtime_error(QStringLiteral("Could not write %1: %2")
-                                     .arg(m_path, QString::fromStdString(error.message()))
-                                     .toStdString());
-    }
+    replaceFile(tmp, m_path);
 }
 
 std::optional<LockInfo> Lock::acquire(bool force)

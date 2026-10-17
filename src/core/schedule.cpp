@@ -48,17 +48,10 @@ void requireSchoolDay(QDate day, const NoSchool &noSchool)
     }
 }
 
-int pushForward(Database &db, int classId, QDate start, const NoSchool &noSchool)
+int shift(Database &db, int classId, QDate start, const NoSchool &noSchool, bool forward)
 {
     const QList<Entry> entries = classEntriesFrom(db, classId, start);
-    move(db, entries, noSchool, true);
-    return int(entries.size());
-}
-
-int pullBack(Database &db, int classId, QDate start, const NoSchool &noSchool)
-{
-    const QList<Entry> entries = classEntriesFrom(db, classId, start);
-    move(db, entries, noSchool, false);
+    move(db, entries, noSchool, forward);
     return int(entries.size());
 }
 
@@ -69,7 +62,7 @@ int insertLesson(Database &db, int classId, QDate day)
     const NoSchool noSchool = db.noSchoolDays();
     requireSchoolDay(day, noSchool);
     Transaction transaction(db);
-    const int moved = pushForward(db, classId, day, noSchool);
+    const int moved = shift(db, classId, day, noSchool, true);
     transaction.commit();
     return moved;
 }
@@ -80,7 +73,7 @@ int removeLesson(Database &db, int classId, QDate day)
     requireSchoolDay(day, noSchool);
     Transaction transaction(db);
     deleteEntry(db, classId, day);
-    const int moved = pullBack(db, classId, schoolcal::nextSchoolDay(day, noSchool), noSchool);
+    const int moved = shift(db, classId, schoolcal::nextSchoolDay(day, noSchool), noSchool, false);
     transaction.commit();
     return moved;
 }
@@ -100,7 +93,7 @@ int markNoSchool(Database &db, QDate day, const QString &reason)
     int moved = 0;
     Transaction transaction(db);
     for (const ClassInfo &c : db.classes(true))
-        moved += pushForward(db, c.id, day, noSchool);
+        moved += shift(db, c.id, day, noSchool, true);
     Statement(db.handle(), "INSERT INTO no_school(date, reason) VALUES (?, ?)")
         .bind(1, day).bind(2, reason).run();
     transaction.commit();
@@ -118,7 +111,7 @@ int unmarkNoSchool(Database &db, QDate day)
     Statement(db.handle(), "DELETE FROM no_school WHERE date=?").bind(1, day).run();
     const QDate after = schoolcal::nextSchoolDay(day, noSchool);
     for (const ClassInfo &c : db.classes(true))
-        moved += pullBack(db, c.id, after, noSchool);
+        moved += shift(db, c.id, after, noSchool, false);
     transaction.commit();
     return moved;
 }

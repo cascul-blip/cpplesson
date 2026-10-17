@@ -4,7 +4,6 @@
 #include <QDate>
 #include <QDateTime>
 #include <QString>
-#include <QStringList>
 
 #include <optional>
 
@@ -20,8 +19,8 @@ std::optional<QDate> backupDate(const QString &name);
 std::optional<QString> runDailyBackup(Database &db, const QString &folder, int retentionDays,
                                       QDate today = QDate::currentDate());
 
-// Deletes backups older than `retentionDays`; returns the paths removed.
-QStringList prune(const QString &folder, int retentionDays, QDate today = QDate::currentDate());
+// Deletes backups older than `retentionDays`.
+void prune(const QString &folder, int retentionDays, QDate today = QDate::currentDate());
 
 int secondsUntilMidnight(const QDateTime &now = QDateTime::currentDateTime());
 
