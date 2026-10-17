@@ -23,6 +23,11 @@ QString lines(QString text)
     return parts.join(QLatin1String("<br>"));
 }
 
+// Every cell carries its own border: Qt 6.8 ignores the table's border
+// attribute under border-collapse, which left the PDFs without grid lines.
+const QString CELL = QStringLiteral("border: 1px solid #555;");
+const QString SPECIAL_CELL = QStringLiteral("border: 1px solid #000;");
+
 QString monthDay(QDate day)
 {
     return schoolcal::format(day, QStringLiteral("MMM d"));
@@ -47,25 +52,25 @@ QString weekHtml(Database &db, QDate monday)
                "<html><body style='font-family: sans-serif; font-size: 9pt; color: #000;'>")
         << QStringLiteral("<h3 style='margin: 0 0 4px 0;'>Week %1 &ndash; %2 to %3, %4</h3>")
                .arg(week).arg(monthDay(monday), monthDay(friday)).arg(friday.year())
-        << QStringLiteral("<table width='100%' border='1' cellspacing='0' cellpadding='3' "
-                          "style='border-collapse: collapse; border-color: #555;'>")
-        << QStringLiteral("<tr><th width='8%' style='background: #ddd;'></th>");
+        << QStringLiteral("<table width='100%' cellspacing='0' cellpadding='3' "
+                          "style='border-collapse: collapse;'>")
+        << QStringLiteral("<tr><th width='8%' style='%1 background: #ddd;'></th>").arg(CELL);
     for (const ClassInfo &c : classes) {
-        out << QStringLiteral("<th width='%1%' style='background: #ddd;'>%2</th>")
-                   .arg(colWidth).arg(c.name.toHtmlEscaped());
+        out << QStringLiteral("<th width='%1%' style='%2 background: #ddd;'>%3</th>")
+                   .arg(colWidth).arg(CELL, c.name.toHtmlEscaped());
     }
     out << QStringLiteral("</tr>");
 
     for (QDate day : days) {
-        out << QStringLiteral("<tr><td valign='top' style='background: #eee;'><b>%1</b><br>%2</td>")
-                   .arg(schoolcal::format(day, QStringLiteral("ddd")), monthDay(day));
+        out << QStringLiteral("<tr><td valign='top' style='%1 background: #eee;'><b>%2</b><br>%3</td>")
+                   .arg(CELL, schoolcal::format(day, QStringLiteral("ddd")), monthDay(day));
         if (noSchool.contains(day)) {
             QString reason = noSchool.value(day);
             if (reason.isEmpty())
                 reason = QStringLiteral("No school");
             out << QStringLiteral("<td colspan='%1' align='center' valign='middle' "
-                                  "style='background: #eee;'><i>No School &ndash; %2</i></td></tr>")
-                       .arg(classes.size()).arg(reason.toHtmlEscaped());
+                                  "style='%2 background: #eee;'><i>No School &ndash; %3</i></td></tr>")
+                       .arg(classes.size()).arg(CELL, reason.toHtmlEscaped());
             continue;
         }
         for (const ClassInfo &c : classes) {
@@ -76,16 +81,17 @@ QString weekHtml(Database &db, QDate monday)
                     parts << QStringLiteral("<b>%1</b>").arg(lines(it->lesson));
                 if (!it->special.trimmed().isEmpty()) {
                     parts << QStringLiteral(
-                                 "<table width='100%' border='1' cellspacing='0' cellpadding='2' "
-                                 "style='border-collapse: collapse; border-color: #000; "
-                                 "margin: 2px 0;'><tr><td style='background: #ffe9a8;'>"
-                                 "<b>&#9733; %1</b></td></tr></table>")
-                                 .arg(lines(it->special));
+                                 "<table width='100%' cellspacing='0' cellpadding='2' "
+                                 "style='border-collapse: collapse; margin: 2px 0;'>"
+                                 "<tr><td style='%1 background: #ffe9a8;'>"
+                                 "<b>&#9733; %2</b></td></tr></table>")
+                                 .arg(SPECIAL_CELL, lines(it->special));
                 }
                 if (!it->homework.trimmed().isEmpty())
                     parts << QStringLiteral("<i>HW:</i> %1").arg(lines(it->homework));
             }
-            out << QStringLiteral("<td valign='top'>%1</td>").arg(parts.join(QLatin1String("<br>")));
+            out << QStringLiteral("<td valign='top' style='%1'>%2</td>")
+                   .arg(CELL, parts.join(QLatin1String("<br>")));
         }
         out << QStringLiteral("</tr>");
     }
