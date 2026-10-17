@@ -29,6 +29,15 @@ struct ClassInfo
     bool active = true;
 };
 
+// One row of an Options save. An id of 0 adds a class.
+struct ClassUpdate
+{
+    int id = 0;
+    QString name;
+    int sortOrder = 0;
+    bool active = true;
+};
+
 struct Entry
 {
     int classId = 0;
@@ -91,6 +100,8 @@ public:
     QList<ClassInfo> classes(bool includeInactive = false);
     int addClass(const QString &name);
     void updateClass(int classId, const QString &name, int sortOrder, bool active);
+    // Settings and the class list, in one commit. A name swap cannot fail halfway.
+    void saveOptions(QDate week1Monday, int retentionDays, const QList<ClassUpdate> &classes);
 
     Entry entry(int classId, QDate day);
     QList<Entry> entriesBetween(QDate start, QDate end);

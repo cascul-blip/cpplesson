@@ -169,6 +169,45 @@ private slots:
         QCOMPARE(again.classes().size(), 7);
     }
 
+    void swappingClassNamesCommitsTogether()
+    {
+        const QList<ClassInfo> before = m_db->classes(true);
+        QVERIFY(before.size() >= 2);
+        const qint64 generation = m_db->generation();
+        const QDate week1 = m_db->week1Monday();
+        QList<ClassUpdate> updates;
+        for (int i = 0; i < before.size(); ++i) {
+            QString name = before.at(i).name;
+            if (i == 0)
+                name = before.at(1).name;
+            else if (i == 1)
+                name = before.at(0).name;
+            updates.append({before.at(i).id, name, i, before.at(i).active});
+        }
+        updates.append({0, QStringLiteral("Choir"), int(before.size()), true});
+        const QDate newWeek1 = week1.addDays(7);
+        m_db->saveOptions(newWeek1, 14, updates);
+
+        const QList<ClassInfo> after = m_db->classes(true);
+        QCOMPARE(after.at(0).name, before.at(1).name);
+        QCOMPARE(after.at(1).name, before.at(0).name);
+        QCOMPARE(after.last().name, QStringLiteral("Choir"));
+        QCOMPARE(m_db->week1Monday(), newWeek1);
+        QCOMPARE(m_db->backupRetentionDays(), 14);
+        QCOMPARE(m_db->generation(), generation + 1);
+
+        for (ClassUpdate &change : updates) {
+            if (change.id == 0)
+                change.id = after.last().id;
+            change.name = QStringLiteral("Same");
+        }
+        QVERIFY_THROWS_EXCEPTION(DbError, m_db->saveOptions(week1, 30, updates));
+        QCOMPARE(m_db->week1Monday(), newWeek1);
+        QCOMPARE(m_db->classes(true).first().name, before.at(1).name);
+        QCOMPARE(m_db->classes(true).size(), after.size());
+        QCOMPARE(m_db->generation(), generation + 1);
+    }
+
     void badRetentionFallsBackToDefault()
     {
         m_db->setSetting(QStringLiteral("backup_retention_days"), QStringLiteral("nope"));
