@@ -130,6 +130,20 @@ private slots:
                                                   {99, FRI, QStringLiteral("x"), {}, {}}));
         }
         QCOMPARE(lessons(1), (Lessons{{THU, "Lesson 1"}}));
+        QCOMPARE(m_db->generation(), 2);  // the failed insert did not count
+    }
+
+    void generationTracksCommitsOnly()
+    {
+        QCOMPARE(m_db->generation(), 1);  // creating the schema
+        m_db->saveEntry({1, THU, QStringLiteral("Lesson 1"), {}, {}});
+        QCOMPARE(m_db->generation(), 2);
+        const QString path = m_db->path();
+        m_db.reset();
+        m_db = std::make_unique<Database>(path);  // reopening writes nothing
+        QCOMPARE(m_db->generation(), 2);
+        m_db->setSetting(QStringLiteral("backup_retention_days"), QStringLiteral("7"));
+        QCOMPARE(m_db->generation(), 3);
     }
 
     void reopeningKeepsData()

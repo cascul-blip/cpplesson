@@ -9,7 +9,9 @@ file as the earlier Python version, so both can open the same folder.
 
 - The data is one SQLite file (`lessonplanner.db`) in a folder you choose, meant to be in Nextcloud.
 - The lock file `lessonplanner.lock` stops two computers from editing at once. The second
-  computer opens **read-only**, and switches to editable when the first one closes.
+  computer opens **read-only**, and switches to editable when the first one closes. If this
+  computer's database is behind the generation recorded in the lock, it stays read-only until
+  that newer copy syncs.
 - A daily backup `lessons_MMDDYYYY.db` is saved in the same folder. The last 30 days are
   kept; you can change that in Options.
 - Read-only PDFs of every week are kept up to date in `<folder>/Tablet/` so you can view

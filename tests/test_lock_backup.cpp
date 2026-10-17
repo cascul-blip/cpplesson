@@ -56,6 +56,7 @@ private slots:
         const auto holder = lk.acquire();
         QVERIFY(holder.has_value());
         QCOMPARE(holder->host, QStringLiteral("other-pc"));
+        QVERIFY(!holder->dbGeneration.has_value());  // a lock from before generations
         QVERIFY(!lk.owned());
         QVERIFY(lock::blockingLock(p).has_value());
     }
@@ -89,6 +90,28 @@ private slots:
         QVERIFY(!QFile::exists(p + ".tmp"));
         a.release();
         QVERIFY(!QFile::exists(p));
+    }
+
+    void generationIsPublishedAndOptional()
+    {
+        QVERIFY(lock::editsAreCurrent(3, std::nullopt));
+        QVERIFY(lock::editsAreCurrent(3, 3));
+        QVERIFY(lock::editsAreCurrent(4, 3));
+        QVERIFY(!lock::editsAreCurrent(2, 3));
+
+        QTemporaryDir dir;
+        const QString path = dir.filePath("x.lock");
+        lock::Lock lk(path);
+        lk.noteGeneration(6);
+        QVERIFY(!lk.acquire().has_value());
+        const auto written = lock::read(path);
+        QVERIFY(written.has_value());
+        QCOMPARE(written->dbGeneration, std::optional<qint64>(6));
+
+        writeForeign(path, 1);  // the older form, with no generation
+        const auto older = lock::read(path);
+        QVERIFY(older.has_value());
+        QVERIFY(!older->dbGeneration.has_value());
     }
 
     void garbageLockIsIgnored()

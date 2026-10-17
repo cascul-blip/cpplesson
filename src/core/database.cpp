@@ -140,7 +140,8 @@ QDate Statement::date(int column) const
 
 // --- Transaction -------------------------------------------------------------
 
-Transaction::Transaction(Database &db) : m_db(db)
+Transaction::Transaction(Database &db)
+    : m_db(db), m_changes(sqlite3_total_changes(db.handle()))
 {
     m_db.exec("BEGIN");
 }
@@ -153,6 +154,8 @@ Transaction::~Transaction()
 
 void Transaction::commit()
 {
+    if (m_db.handle() && sqlite3_total_changes(m_db.handle()) != m_changes)
+        m_db.bumpGeneration();
     m_db.exec("COMMIT");
     m_done = true;
 }
@@ -243,9 +246,11 @@ QString Database::setting(const QString &key)
 
 void Database::setSetting(const QString &key, const QString &value)
 {
+    Transaction transaction(*this);
     Statement(m_db, "INSERT INTO settings(key, value) VALUES (?, ?) "
                     "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         .bind(1, key).bind(2, value).run();
+    transaction.commit();
 }
 
 QDate Database::week1Monday()
@@ -299,8 +304,24 @@ int Database::addClass(const QString &name)
 
 void Database::updateClass(int classId, const QString &name, int sortOrder, bool active)
 {
+    Transaction transaction(*this);
     Statement(m_db, "UPDATE classes SET name=?, sort_order=?, active=? WHERE id=?")
         .bind(1, name).bind(2, sortOrder).bind(3, int(active)).bind(4, classId).run();
+    transaction.commit();
+}
+
+qint64 Database::generation()
+{
+    bool ok = false;
+    const qint64 value = setting(QStringLiteral("generation")).toLongLong(&ok);
+    return ok ? value : 0;
+}
+
+void Database::bumpGeneration()
+{
+    Statement(m_db, "INSERT INTO settings(key, value) VALUES ('generation', '1') "
+                    "ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1")
+        .run();
 }
 
 // --- entries -----------------------------------------------------------------

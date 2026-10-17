@@ -52,9 +52,12 @@ QString longDay(QDate day)  // Monday Oct 5
 }  // namespace
 
 MainWindow::MainWindow(const QString &folder, std::unique_ptr<Database> db, lock::Lock &fileLock,
-                       const std::optional<lock::LockInfo> &holder)
-    : m_folder(folder), m_db(std::move(db)), m_lock(fileLock)
+                       const std::optional<lock::LockInfo> &holder, bool waitingForSync)
+    : m_folder(folder), m_db(std::move(db)), m_lock(fileLock), m_waitingForSync(waitingForSync),
+      m_holder(holder)
 {
+    if (holder)
+        noteRemote(holder->dbGeneration);
     m_dataVersion = m_db->dataVersion();
     m_dbFile = fileIdentity(m_db->path());
 
@@ -248,6 +251,7 @@ void MainWindow::afterChange(const QString &message)
     refreshAll(true);  // pending edits were flushed before the change
     m_dataVersion = m_db->dataVersion();
     scheduleTabletExport();
+    publishGeneration();
     if (!message.isEmpty())
         statusBar()->showMessage(message, 6000);
 }
@@ -263,11 +267,29 @@ void MainWindow::saveEntry(const Entry &entry, bool *saved)
     m_db->saveEntry(entry);
     if (saved)
         *saved = true;
+    publishGeneration();
     m_dataVersion = m_db->dataVersion();
     if (!m_tabWeeks.contains(schoolcal::mondayOf(entry.date)))
         rebuildTabs();
     scheduleTabletExport();
     statusBar()->showMessage(QStringLiteral("Saved"), 1500);
+}
+
+void MainWindow::publishGeneration()
+{
+    if (m_closed || !m_lock.owned())
+        return;
+    m_lock.noteGeneration(m_db->generation());
+    try {
+        // Rewrites the lock with the new generation, or reports that another
+        // computer has taken it. The save itself has already committed.
+        if (const auto holder = m_lock.heartbeat()) {
+            setReadOnly(holder);
+            flushAll();
+        }
+    } catch (const std::exception &error) {
+        statusBar()->showMessage(QString::fromUtf8(error.what()), 10000);
+    }
 }
 
 QString MainWindow::className(int classId)
@@ -435,28 +457,104 @@ void MainWindow::unmarkNoSchool(QDate day)
 
 void MainWindow::setReadOnly(const std::optional<lock::LockInfo> &holder)
 {
-    m_readOnly = holder.has_value();
+    if (holder)
+        m_holder = holder;
+    m_readOnly = m_waitingForSync || !m_lock.owned();
     for (WeekView *weekView : std::as_const(m_views))
         weekView->setReadOnly(m_readOnly);
-    if (!holder) {
+    if (!m_readOnly) {
         m_banner->hide();
         return;
     }
+    if (m_waitingForSync) {
+        const QString who = m_holder ? m_holder->host.toHtmlEscaped()
+                                     : QStringLiteral("The other computer");
+        m_bannerLabel->setText(
+            QStringLiteral("<b>Waiting for the latest changes to sync.</b> %1 is at generation %2; "
+                           "this computer has generation %3.")
+                .arg(who, QString::number(m_neededGeneration.value_or(0)),
+                     QString::number(m_db->generation())));
+        m_takeOverButton->setText(QStringLiteral("Edit anyway"));
+        m_banner->show();
+        return;
+    }
+    const lock::LockInfo info = holder.value_or(m_holder.value_or(lock::LockInfo{}));
     m_bannerLabel->setText(
         QStringLiteral("<b>Read-only.</b> The lesson database is open on another computer: %1. "
-                       "Close it there to edit here.").arg(holder->describe().toHtmlEscaped()));
+                       "Close it there to edit here.").arg(info.describe().toHtmlEscaped()));
+    m_takeOverButton->setText(QStringLiteral("Take over anyway…"));
     m_banner->show();
+}
+
+void MainWindow::noteRemote(const std::optional<qint64> &generation)
+{
+    if (generation && (!m_neededGeneration || *generation > *m_neededGeneration))
+        m_neededGeneration = generation;
+}
+
+void MainWindow::checkSync()
+{
+    if (m_closed || m_lock.owned())
+        return;
+    const auto info = m_lock.current();
+    if (info && !info->isThisHost()) {
+        noteRemote(info->dbGeneration);
+        m_holder = info;
+    }
+    if (m_waitingForSync) {
+        if (lock::editsAreCurrent(m_db->generation(), m_neededGeneration))
+            enableEditing(QStringLiteral("The latest changes arrived; editing is enabled."));
+        else
+            setReadOnly(m_holder);
+        return;
+    }
+    // A stale lock used to be taken immediately, which discarded the generation
+    // this computer still needs to catch up to.
+    if (info && !info->isThisHost() && info->isStale()
+        && !lock::editsAreCurrent(m_db->generation(), info->dbGeneration)) {
+        m_waitingForSync = true;
+        setReadOnly(info);
+    }
+}
+
+void MainWindow::enableEditing(const QString &message)
+{
+    m_waitingForSync = false;
+    m_lock.noteGeneration(m_db->generation());
+    m_lock.acquire(true);
+    setReadOnly(std::nullopt);
+    dailyBackup();
+    scheduleTabletExport();
+    if (!message.isEmpty())
+        statusBar()->showMessage(message, 10000);
 }
 
 void MainWindow::takeOver()
 {
-    if (confirm(QStringLiteral(
-            "Take over the database? Only do this if the other computer is not actually using "
-            "Lesson Planner (for example it crashed or was left open and asleep)."))) {
-        m_lock.acquire(true);
-        setReadOnly(std::nullopt);
-        dailyBackup();
+    if (m_waitingForSync) {
+        if (!confirm(QStringLiteral(
+                "The other computer's last save may still be on its way. "
+                "Edits now can conflict with it. Edit anyway?")))
+            return;
+        enableEditing();
+        return;
     }
+    if (!confirm(QStringLiteral(
+            "Take over the database? Only do this if the other computer is not actually using "
+            "Lesson Planner (for example it crashed or was left open and asleep).")))
+        return;
+    if (const auto info = m_lock.current()) {
+        if (!info->isThisHost()) {
+            noteRemote(info->dbGeneration);
+            m_holder = info;
+        }
+    }
+    if (!lock::editsAreCurrent(m_db->generation(), m_neededGeneration)) {
+        m_waitingForSync = true;
+        setReadOnly(m_holder);
+        return;
+    }
+    enableEditing();
 }
 
 void MainWindow::heartbeat()
@@ -465,12 +563,16 @@ void MainWindow::heartbeat()
         return;
     try {
         if (m_lock.owned()) {
+            m_lock.noteGeneration(m_db->generation());
             if (const auto holder = m_lock.heartbeat()) {
                 flushAll();
                 setReadOnly(holder);
             }
             return;
         }
+        checkSync();
+        if (m_lock.owned() || m_waitingForSync)
+            return;
         const auto holder = m_lock.acquire();  // succeeds once the other computer lets go
         setReadOnly(holder);
         if (!holder) {
@@ -511,6 +613,7 @@ void MainWindow::poll()
         refreshAll();
         scheduleTabletExport();
     }
+    checkSync();
 }
 
 // --- backup / export ---------------------------------------------------------
