@@ -1,6 +1,7 @@
 #include "core/database.h"
 
 #include <QDateTime>
+#include <QHash>
 
 #include <sqlite3.h>
 
@@ -307,6 +308,46 @@ void Database::updateClass(int classId, const QString &name, int sortOrder, bool
     Transaction transaction(*this);
     Statement(m_db, "UPDATE classes SET name=?, sort_order=?, active=? WHERE id=?")
         .bind(1, name).bind(2, sortOrder).bind(3, int(active)).bind(4, classId).run();
+    transaction.commit();
+}
+
+void Database::saveOptions(QDate week1Monday, int retentionDays, const QList<ClassUpdate> &classes)
+{
+    Transaction transaction(*this);
+    const auto putSetting = [this](const QString &key, const QString &value) {
+        Statement(m_db, "INSERT INTO settings(key, value) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            .bind(1, key).bind(2, value).run();
+    };
+    putSetting(QStringLiteral("week1_monday"), week1Monday.toString(Qt::ISODate));
+    putSetting(QStringLiteral("backup_retention_days"), QString::number(retentionDays));
+
+    QHash<int, QString> currentNames;
+    for (const ClassInfo &c : this->classes(true))
+        currentNames.insert(c.id, c.name);
+
+    // Free names that are moving before any class takes its final name, so
+    // Biology and Physics can trade places under UNIQUE(name).
+    for (const ClassUpdate &change : classes) {
+        if (change.id == 0 || currentNames.value(change.id) == change.name)
+            continue;
+        Statement(m_db, "UPDATE classes SET name=? WHERE id=?")
+            .bind(1, QStringLiteral("\x01") + QString::number(change.id))
+            .bind(2, change.id)
+            .run();
+    }
+    for (const ClassUpdate &change : classes) {
+        if (change.id == 0) {
+            Statement(m_db, "INSERT INTO classes(name, sort_order, active) VALUES (?, ?, ?)")
+                .bind(1, change.name).bind(2, change.sortOrder).bind(3, int(change.active)).run();
+            continue;
+        }
+        Statement(m_db, "UPDATE classes SET name=?, sort_order=?, active=? WHERE id=?")
+            .bind(1, change.name).bind(2, change.sortOrder).bind(3, int(change.active))
+            .bind(4, change.id).run();
+        if (sqlite3_changes(m_db) != 1)
+            throw DbError(QStringLiteral("No such class").toStdString());
+    }
     transaction.commit();
 }
 

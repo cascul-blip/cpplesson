@@ -160,29 +160,35 @@ void OptionsDialog::save()
 
     const QString newFolder =
         QDir::cleanPath(config::expandUser(QDir::fromNativeSeparators(m_folderEdit->text())));
-    if (newFolder != QDir::cleanPath(config::dbFolder().value_or(QString()))) {
-        if (!QDir(newFolder).exists()) {
-            QMessageBox::warning(this, title,
-                                 QStringLiteral("Folder does not exist:\n%1")
-                                     .arg(QDir::toNativeSeparators(newFolder)));
-            return;
-        }
-        config::setDbFolder(newFolder);
-        m_folderChanged = true;
+    const bool folderChange =
+        newFolder != QDir::cleanPath(config::dbFolder().value_or(QString()));
+    if (folderChange && !QDir(newFolder).exists()) {
+        QMessageBox::warning(this, title,
+                             QStringLiteral("Folder does not exist:\n%1")
+                                 .arg(QDir::toNativeSeparators(newFolder)));
+        return;
     }
 
     if (!m_readOnly) {
-        m_db.setSetting(QStringLiteral("week1_monday"), week1.toString(Qt::ISODate));
-        m_db.setSetting(QStringLiteral("backup_retention_days"),
-                        QString::number(m_retention->value()));
+        QList<ClassUpdate> classes;
         for (int order = 0; order < m_classList->count(); ++order) {
             QListWidgetItem *item = m_classList->item(order);
-            const QString name = item->text().trimmed();
             const QVariant id = item->data(ID_ROLE);
-            const int classId = id.isValid() ? id.toInt() : m_db.addClass(name);
-            item->setData(ID_ROLE, classId);  // so a failed save does not add it twice
-            m_db.updateClass(classId, name, order, item->checkState() == Qt::Checked);
+            classes.append({id.isValid() ? id.toInt() : 0, item->text().trimmed(), order,
+                            item->checkState() == Qt::Checked});
         }
+        try {
+            m_db.saveOptions(week1, m_retention->value(), classes);
+        } catch (const DbError &error) {
+            QMessageBox::warning(this, title, QString::fromUtf8(error.what()));
+            return;
+        }
+    }
+
+    // Only after the database commit, so Cancel or a failed save keeps the old folder.
+    if (folderChange) {
+        config::setDbFolder(newFolder);
+        m_folderChanged = true;
     }
     accept();
 }
