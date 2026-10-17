@@ -113,7 +113,7 @@ private slots:
     void backupAndPrune()
     {
         QTemporaryDir dir;
-        Database db(dir.filePath("lessonplanner.db"));
+        Database db(dir.filePath("lessonplanner.db"), DbOpen::Create);
         db.saveEntry({1, QDate(2026, 9, 30), QStringLiteral("Lesson 1"), {}, {}});
         const QString old = dir.filePath("lessons_08012026.db");
         const QString keep = dir.filePath("lessons_09152026.db");
@@ -131,6 +131,23 @@ private slots:
 
         Database copy(*created);
         QCOMPARE(copy.entry(1, QDate(2026, 9, 30)).lesson, QStringLiteral("Lesson 1"));
+    }
+
+    void badRetentionDoesNotWipeBackups()
+    {
+        QTemporaryDir dir;
+        const QDate today(2026, 9, 30);
+        const QString old = dir.filePath("lessons_08012026.db");
+        const QString recent = dir.filePath("lessons_09152026.db");
+        writeFile(old);
+        writeFile(recent);
+        // August 1 is outside the 30-day default; September 15 is inside it.
+        // A negative or zero value must use that default, not delete both.
+        QCOMPARE(backup::prune(dir.path(), -3, today).size(), 1);
+        QVERIFY(!QFile::exists(old));
+        QVERIFY(QFile::exists(recent));
+        QCOMPARE(backup::prune(dir.path(), 0, today).size(), 0);
+        QVERIFY(QFile::exists(recent));
     }
 
     void secondsUntilMidnight()

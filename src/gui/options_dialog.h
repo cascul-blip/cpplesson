@@ -38,3 +38,8 @@ private:
 
 // First run: explain, then ask for the database folder. Nothing if cancelled.
 std::optional<QString> chooseInitialFolder(QWidget *parent = nullptr);
+
+// The folder exists, but lessonplanner.db does not. Quit is the default.
+enum class MissingDbChoice { Create, ChooseFolder, Quit };
+
+MissingDbChoice askAboutMissingDatabase(const QString &folder, QWidget *parent = nullptr);

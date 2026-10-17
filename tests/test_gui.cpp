@@ -7,8 +7,11 @@
 #include "core/schoolcal.h"
 #include "gui/cell_widget.h"
 #include "gui/main_window.h"
+#include "gui/options_dialog.h"
 #include "gui/week_view.h"
 
+#include <QAbstractButton>
+#include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QDir>
@@ -55,6 +58,27 @@ void answerNextDialog(const QString &text = {})
     });
 }
 
+// Clicks a button on the modal message box that is about to open.
+void clickNextMessageButton(const QString &text)
+{
+    auto *timer = new QTimer(qApp);
+    timer->setInterval(10);
+    QObject::connect(timer, &QTimer::timeout, timer, [timer, text] {
+        auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        if (!box)
+            return;
+        for (QAbstractButton *button : box->buttons()) {
+            if (button->text() == text) {
+                timer->stop();
+                timer->deleteLater();
+                button->click();
+                return;
+            }
+        }
+    });
+    timer->start();
+}
+
 void rightClick(QWidget *widget)
 {
     const QPoint pos(5, 5);
@@ -87,7 +111,9 @@ private slots:
         const QString folder = dir.path();
         lock::Lock fileLock(config::lockPath(folder));
         QVERIFY(!fileLock.acquire().has_value());
-        MainWindow window(folder, std::make_unique<Database>(config::dbPath(folder)), fileLock,
+        MainWindow window(folder,
+                          std::make_unique<Database>(config::dbPath(folder), DbOpen::Create),
+                          fileLock,
                           std::nullopt);
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
@@ -161,7 +187,9 @@ private slots:
         const QString folder = dir.path();
         const lock::LockInfo other{QStringLiteral("other-pc"), QStringLiteral("x"), 1, {}, {}};
         lock::Lock fileLock(config::lockPath(folder));
-        MainWindow window(folder, std::make_unique<Database>(config::dbPath(folder)), fileLock,
+        MainWindow window(folder,
+                          std::make_unique<Database>(config::dbPath(folder), DbOpen::Create),
+                          fileLock,
                           other);
         window.show();
         QVERIFY(QTest::qWaitForWindowExposed(&window));
@@ -184,6 +212,106 @@ private slots:
         window.close();
         QVERIFY(!QDir(folder).exists(QStringLiteral("Tablet")));  // read-only writes nothing
         QVERIFY(QDir(folder).entryList({"lessons_*.db"}).isEmpty());
+    }
+
+    void failedSaveStaysDirtyUntilItSucceeds()
+    {
+        CellWidget cell(1, monday);
+        enum class Mode { Throw, Ignore, Save } mode = Mode::Throw;
+        int saves = 0;
+        QString seen;
+        connect(&cell, &CellWidget::changed, &cell, [&](const Entry &entry, bool *saved) {
+            seen = entry.lesson;
+            if (mode == Mode::Throw)
+                throw DbError("disk full");
+            if (mode == Mode::Ignore)
+                return;
+            ++saves;
+            if (saved)
+                *saved = true;
+        });
+        auto *lesson = cell.findChildren<FieldEdit *>().first();
+        lesson->setPlainText(QStringLiteral("keep me"));
+        QVERIFY(cell.isDirty());
+        QVERIFY_THROWS_EXCEPTION(DbError, cell.flush());
+        QCOMPARE(seen, QStringLiteral("keep me"));
+        QVERIFY(cell.isDirty());
+        cell.setEntry(Entry{1, monday, QStringLiteral("from the database"), {}, {}});
+        QCOMPARE(cell.entry().lesson, QStringLiteral("keep me"));
+
+        // A receiver that does not store the entry must not clear the edit either.
+        mode = Mode::Ignore;
+        cell.flush();
+        QVERIFY(cell.isDirty());
+
+        mode = Mode::Save;
+        cell.flush();
+        QVERIFY(!cell.isDirty());
+        QCOMPARE(saves, 1);
+        cell.setEntry(Entry{1, monday, QStringLiteral("from the database"), {}, {}});
+        QCOMPARE(cell.entry().lesson, QStringLiteral("from the database"));
+    }
+
+    void reloadSavesTheLastKeystrokes()
+    {
+        QTemporaryDir dir;
+        const QString folder = dir.path();
+        lock::Lock fileLock(config::lockPath(folder));
+        QVERIFY(!fileLock.acquire().has_value());
+        MainWindow window(folder,
+                          std::make_unique<Database>(config::dbPath(folder), DbOpen::Create),
+                          fileLock,
+                          std::nullopt);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        Database check(config::dbPath(folder));
+
+        WeekView *view = thisWeek(window);
+        CellWidget *cell = view->cell(1, monday);
+        auto *lessonEdit = cell->findChildren<FieldEdit *>().first();
+        lessonEdit->setFocus();
+        QTest::keyClicks(lessonEdit, QStringLiteral("just typed"));
+        QVERIFY(cell->isDirty());
+        QVERIFY(check.entry(1, monday).isEmpty());
+
+        QAction *reload = nullptr;
+        for (QAction *action : window.findChildren<QAction *>()) {
+            if (action->shortcut() == QKeySequence(QKeySequence::Refresh))
+                reload = action;
+        }
+        QVERIFY(reload);
+        reload->trigger();
+        QTRY_COMPARE(check.entry(1, monday).lesson, QStringLiteral("just typed"));
+        QVERIFY(!cell->isDirty());
+        window.close();
+    }
+
+    void missingDatabaseDialog()
+    {
+        const QString folder = QStringLiteral("/tmp/lessonplanner-missing");
+        clickNextMessageButton(QStringLiteral("Quit"));
+        QCOMPARE(askAboutMissingDatabase(folder), MissingDbChoice::Quit);
+        clickNextMessageButton(QStringLiteral("Create a new one"));
+        QCOMPARE(askAboutMissingDatabase(folder), MissingDbChoice::Create);
+        clickNextMessageButton(QStringLiteral("Choose another folder"));
+        QCOMPARE(askAboutMissingDatabase(folder), MissingDbChoice::ChooseFolder);
+
+        QString defaultText;
+        auto *timer = new QTimer(this);
+        timer->setInterval(10);
+        connect(timer, &QTimer::timeout, this, [timer, &defaultText] {
+            auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            if (!box)
+                return;
+            timer->stop();
+            timer->deleteLater();
+            if (box->defaultButton())
+                defaultText = box->defaultButton()->text();
+            QTest::keyClick(box, Qt::Key_Escape);
+        });
+        timer->start();
+        QCOMPARE(askAboutMissingDatabase(folder), MissingDbChoice::Quit);
+        QCOMPARE(defaultText, QStringLiteral("Quit"));
     }
 };
 

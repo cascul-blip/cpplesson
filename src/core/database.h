@@ -63,10 +63,14 @@ private:
     sqlite3_stmt *m_stmt = nullptr;
 };
 
+// Existing never creates a file. Create is for a new planner, the smoke test,
+// and tests.
+enum class DbOpen { Existing, Create };
+
 class Database
 {
 public:
-    explicit Database(const QString &path);
+    explicit Database(const QString &path, DbOpen mode = DbOpen::Existing);
     ~Database();
     Database(const Database &) = delete;
     Database &operator=(const Database &) = delete;

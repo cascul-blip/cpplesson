@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QIcon>
 #include <QMessageBox>
 #include <QTemporaryDir>
@@ -93,12 +94,35 @@ int main(int argc, char *argv[])
         }
     }
 
+    // A missing file is a choice, not a new empty planner. The smoke test is
+    // the one path that creates without asking.
+    bool create = smokeTest;
+    if (!smokeTest) {
+        while (!QFile::exists(config::dbPath(folder))) {
+            const MissingDbChoice choice = askAboutMissingDatabase(folder);
+            if (choice == MissingDbChoice::Quit)
+                return 0;
+            if (choice == MissingDbChoice::ChooseFolder) {
+                const QString chosen = QFileDialog::getExistingDirectory(
+                    nullptr, QStringLiteral("Database folder"), folder);
+                if (!chosen.isEmpty()) {
+                    folder = QDir::cleanPath(chosen);
+                    config::setDbFolder(folder);
+                }
+                continue;
+            }
+            create = true;
+            break;
+        }
+    }
+
     lock::Lock fileLock(config::lockPath(folder));
     std::optional<lock::LockInfo> holder;
     std::unique_ptr<Database> db;
     try {
         holder = fileLock.acquire();
-        db = std::make_unique<Database>(config::dbPath(folder));
+        db = std::make_unique<Database>(config::dbPath(folder),
+                                        create ? DbOpen::Create : DbOpen::Existing);
     } catch (const std::exception &error) {
         fileLock.release();
         std::fprintf(stderr, "Lesson Planner: %s\n", error.what());

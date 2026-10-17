@@ -153,10 +153,14 @@ void CellWidget::setReadOnly(bool readOnly)
 void CellWidget::flush()
 {
     m_timer->stop();
-    if (m_dirty) {
+    if (!m_dirty)
+        return;
+    bool saved = false;
+    emit changed(entry(), &saved);
+    // On failure the timer stays stopped, so a full disk does not raise the
+    // error dialog once a second. The next edit, or the next flush, tries again.
+    if (saved)
         m_dirty = false;
-        emit changed(entry());
-    }
 }
 
 void CellWidget::focusLesson()
