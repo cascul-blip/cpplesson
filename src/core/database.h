@@ -102,8 +102,14 @@ public:
 
     QMap<QDate, QString> noSchoolDays();
 
+    // How many committed changes this file contains. One transaction is one step.
+    // Opening the file does not change it. A rolled-back transaction does not either.
+    qint64 generation();
+
 private:
+    friend class Transaction;
     void initSchema();
+    void bumpGeneration();
 
     QString m_path;
     sqlite3 *m_db = nullptr;
@@ -122,5 +128,6 @@ public:
 
 private:
     Database &m_db;
+    int m_changes = 0;
     bool m_done = false;
 };

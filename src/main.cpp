@@ -118,11 +118,26 @@ int main(int argc, char *argv[])
 
     lock::Lock fileLock(config::lockPath(folder));
     std::optional<lock::LockInfo> holder;
+    bool waiting = false;
     std::unique_ptr<Database> db;
     try {
-        holder = fileLock.acquire();
         db = std::make_unique<Database>(config::dbPath(folder),
                                         create ? DbOpen::Create : DbOpen::Existing);
+        fileLock.noteGeneration(db->generation());
+        // Read the lock before writing it, so a stale lock's generation is not
+        // thrown away while this computer still has an older database.
+        const std::optional<lock::LockInfo> existing = lock::read(fileLock.path());
+        const bool foreign = existing && !existing->isThisHost();
+        const bool behind = foreign
+            && !lock::editsAreCurrent(db->generation(), existing->dbGeneration);
+        if (foreign && !existing->isStale()) {
+            holder = existing;
+        } else if (behind) {
+            holder = existing;
+            waiting = true;
+        } else {
+            holder = fileLock.acquire();
+        }
     } catch (const std::exception &error) {
         fileLock.release();
         std::fprintf(stderr, "Lesson Planner: %s\n", error.what());
@@ -136,7 +151,7 @@ int main(int argc, char *argv[])
 
     int result = 0;
     {
-        MainWindow window(folder, std::move(db), fileLock, holder);
+        MainWindow window(folder, std::move(db), fileLock, holder, waiting);
         window.show();
         if (smokeTest)
             QTimer::singleShot(SMOKE_TEST_MS, &window, &QWidget::close);

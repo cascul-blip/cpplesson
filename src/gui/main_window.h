@@ -27,9 +27,11 @@ class MainWindow : public QMainWindow
 
 public:
     // `holder` is the other computer that has the lock, if any; the window
-    // then opens read-only. `fileLock` must outlive the window.
+    // then opens read-only. `waitingForSync` stays read-only until this
+    // database's generation catches up with the lock. `fileLock` must outlive
+    // the window.
     MainWindow(const QString &folder, std::unique_ptr<Database> db, lock::Lock &fileLock,
-               const std::optional<lock::LockInfo> &holder);
+               const std::optional<lock::LockInfo> &holder, bool waitingForSync = false);
     ~MainWindow() override;
 
 protected:
@@ -54,6 +56,7 @@ private:
 
     // editing
     void saveEntry(const Entry &entry, bool *saved);
+    void publishGeneration();
     QString className(int classId);
     void cellMenu(int classId, QDate day, QPoint pos, QMenu *standardMenu);
     void noSchoolMenu(QDate day, QPoint pos);
@@ -68,6 +71,9 @@ private:
 
     // lock / read-only
     void setReadOnly(const std::optional<lock::LockInfo> &holder);
+    void noteRemote(const std::optional<qint64> &generation);
+    void checkSync();
+    void enableEditing(const QString &message = {});
     void takeOver();
     void heartbeat();
 
@@ -84,7 +90,10 @@ private:
     std::unique_ptr<Database> m_db;
     lock::Lock &m_lock;
     bool m_readOnly = false;
+    bool m_waitingForSync = false;
     bool m_closed = false;
+    std::optional<lock::LockInfo> m_holder;
+    std::optional<qint64> m_neededGeneration;
     QMap<QDate, WeekView *> m_views;
     QSet<QDate> m_extraWeeks;
     QList<QDate> m_tabWeeks;

@@ -89,8 +89,10 @@ int markNoSchool(Database &db, QDate day, const QString &reason)
 {
     NoSchool noSchool = db.noSchoolDays();
     if (noSchool.contains(day)) {
+        Transaction transaction(db);
         Statement(db.handle(), "UPDATE no_school SET reason=? WHERE date=?")
             .bind(1, reason).bind(2, day).run();
+        transaction.commit();
         return 0;
     }
     requireSchoolDay(day, noSchool);

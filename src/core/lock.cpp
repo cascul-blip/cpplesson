@@ -75,10 +75,20 @@ std::optional<LockInfo> read(const QString &path)
     }
     LockInfo info{data[QLatin1String("host")].toString(), data[QLatin1String("user")].toString(),
                   data[QLatin1String("pid")].toInteger(), data[QLatin1String("started")].toString(),
-                  data[QLatin1String("heartbeat")].toString()};
+                  data[QLatin1String("heartbeat")].toString(), std::nullopt};
+    if (data.contains(QLatin1String("db_generation"))) {
+        const QJsonValue generation = data.value(QLatin1String("db_generation"));
+        if (generation.isDouble())
+            info.dbGeneration = generation.toInteger();
+    }
     if (!info.heartbeatTime().isValid())
         return std::nullopt;
     return info;
+}
+
+bool editsAreCurrent(qint64 localGeneration, const std::optional<qint64> &remoteGeneration)
+{
+    return !remoteGeneration || localGeneration >= *remoteGeneration;
 }
 
 std::optional<LockInfo> blockingLock(const QString &path)
@@ -99,6 +109,7 @@ void Lock::write()
         {QStringLiteral("pid"), QCoreApplication::applicationPid()},
         {QStringLiteral("started"), m_started},
         {QStringLiteral("heartbeat"), timestamp()},
+        {QStringLiteral("db_generation"), m_generation},
     };
     // write beside the lock, then swap it in so a reader never sees half a file
     const QString tmp = m_path + QStringLiteral(".tmp");

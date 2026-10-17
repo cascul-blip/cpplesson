@@ -16,6 +16,7 @@
 #include <QContextMenuEvent>
 #include <QDir>
 #include <QInputDialog>
+#include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
@@ -185,7 +186,8 @@ private slots:
     {
         QTemporaryDir dir;
         const QString folder = dir.path();
-        const lock::LockInfo other{QStringLiteral("other-pc"), QStringLiteral("x"), 1, {}, {}};
+        const lock::LockInfo other{QStringLiteral("other-pc"), QStringLiteral("x"), 1, {}, {},
+                                   std::nullopt};
         lock::Lock fileLock(config::lockPath(folder));
         MainWindow window(folder,
                           std::make_unique<Database>(config::dbPath(folder), DbOpen::Create),
@@ -312,6 +314,82 @@ private slots:
         timer->start();
         QCOMPARE(askAboutMissingDatabase(folder), MissingDbChoice::Quit);
         QCOMPARE(defaultText, QStringLiteral("Quit"));
+    }
+
+    void waitsWhenTheOtherCopyIsAhead()
+    {
+        QTemporaryDir dir;
+        const QString folder = dir.path();
+        lock::Lock fileLock(config::lockPath(folder));
+        auto db = std::make_unique<Database>(config::dbPath(folder), DbOpen::Create);
+        QCOMPARE(db->generation(), 1);
+        lock::LockInfo school{QStringLiteral("school"), QStringLiteral("x"), 1, {}, {},
+                              std::nullopt};
+        school.dbGeneration = 4;
+        MainWindow window(folder, std::move(db), fileLock, school, true);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+        QLabel *banner = nullptr;
+        for (QLabel *label : window.findChildren<QLabel *>()) {
+            if (label->text().contains(QStringLiteral("Waiting")))
+                banner = label;
+        }
+        QVERIFY(banner);
+        QVERIFY(banner->text().contains(QStringLiteral("generation 4")));
+        QVERIFY(banner->text().contains(QStringLiteral("generation 1")));
+        QVERIFY(!fileLock.owned());
+
+        WeekView *view = thisWeek(window);
+        QVERIFY(view && view->loaded());
+        auto *lesson = view->cell(1, monday)->findChildren<FieldEdit *>().first();
+        QVERIFY(lesson->isReadOnly());
+
+        QPushButton *editAnyway = nullptr;
+        for (QPushButton *button : window.findChildren<QPushButton *>()) {
+            if (button->text() == QStringLiteral("Edit anyway"))
+                editAnyway = button;
+        }
+        QVERIFY(editAnyway);
+        answerNextDialog();
+        editAnyway->click();
+        QVERIFY(fileLock.owned());
+        QVERIFY(!lesson->isReadOnly());
+        const auto written = lock::read(fileLock.path());
+        QCOMPARE(written->dbGeneration, std::optional<qint64>(1));
+        window.close();
+    }
+
+    void takeOverWaitsInsteadOfEditingAStaleCopy()
+    {
+        QTemporaryDir dir;
+        const QString folder = dir.path();
+        lock::Lock fileLock(config::lockPath(folder));
+        auto db = std::make_unique<Database>(config::dbPath(folder), DbOpen::Create);
+        lock::LockInfo school{QStringLiteral("school"), QStringLiteral("x"), 1, {}, {},
+                              std::nullopt};
+        school.dbGeneration = 4;
+        school.heartbeat = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+        MainWindow window(folder, std::move(db), fileLock, school);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+        QPushButton *takeOver = nullptr;
+        for (QPushButton *button : window.findChildren<QPushButton *>()) {
+            if (button->text().startsWith(QStringLiteral("Take over")))
+                takeOver = button;
+        }
+        QVERIFY(takeOver);
+        answerNextDialog();
+        takeOver->click();
+        QVERIFY(!fileLock.owned());
+        bool waiting = false;
+        for (QLabel *label : window.findChildren<QLabel *>()) {
+            if (label->text().contains(QStringLiteral("Waiting")))
+                waiting = true;
+        }
+        QVERIFY(waiting);
+        window.close();
     }
 };
 
