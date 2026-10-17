@@ -1,14 +1,13 @@
 #include "core/backup.h"
 
 #include "core/database.h"
+#include "core/replace.h"
 
 #include <QDir>
 #include <QFile>
 #include <QRegularExpression>
 
 #include <sqlite3.h>
-
-#include <filesystem>
 
 namespace backup {
 
@@ -43,9 +42,10 @@ std::optional<QString> runDailyBackup(Database &db, const QString &folder, int r
             sqlite3_backup *job = sqlite3_backup_init(dest, "main", db.handle(), "main");
             if (job) {
                 sqlite3_backup_step(job, -1);
-                sqlite3_backup_finish(job);
+                rc = sqlite3_backup_finish(job);
+            } else {
+                rc = sqlite3_errcode(dest);
             }
-            rc = sqlite3_errcode(dest);
         }
         const std::string message = dest ? sqlite3_errmsg(dest) : "out of memory";
         sqlite3_close(dest);
@@ -53,28 +53,25 @@ std::optional<QString> runDailyBackup(Database &db, const QString &folder, int r
             QFile::remove(tmp);
             throw DbError(message);
         }
-        std::filesystem::rename(std::filesystem::path(tmp.toStdU16String()),
-                                std::filesystem::path(target.toStdU16String()));
+        replaceFile(tmp, target);
         created = target;
     }
     prune(folder, retentionDays, today);
     return created;
 }
 
-QStringList prune(const QString &folder, int retentionDays, QDate today)
+void prune(const QString &folder, int retentionDays, QDate today)
 {
     // Same default as the database setting. A bad value must not delete everything.
     if (retentionDays < 1)
         retentionDays = 30;
     const QDate cutoff = today.addDays(-retentionDays);
     const QDir dir(folder);
-    QStringList removed;
     for (const QString &name : dir.entryList({QStringLiteral("lessons_*.db")}, QDir::Files)) {
         const std::optional<QDate> day = backupDate(name);
-        if (day && *day < cutoff && QFile::remove(dir.filePath(name)))
-            removed.append(dir.filePath(name));
+        if (day && *day < cutoff)
+            QFile::remove(dir.filePath(name));
     }
-    return removed;
 }
 
 int secondsUntilMidnight(const QDateTime &now)

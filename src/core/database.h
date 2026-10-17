@@ -25,7 +25,6 @@ struct ClassInfo
 {
     int id = 0;
     QString name;
-    int sortOrder = 0;
     bool active = true;
 };
 

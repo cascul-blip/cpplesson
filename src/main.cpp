@@ -18,6 +18,7 @@
 
 #include <cstdio>
 #include <exception>
+#include <optional>
 
 namespace {
 
@@ -77,12 +78,17 @@ int main(int argc, char *argv[])
     // --smoke-test: run against a throwaway folder for a few seconds, then
     // close and report whether the database was created. Used by the CI build.
     const bool smokeTest = app.arguments().contains(QStringLiteral("--smoke-test"));
-    QTemporaryDir smokeDir;
+    std::optional<QTemporaryDir> smokeDir;
     app.quiet = smokeTest;
 
     QString folder;
     if (smokeTest) {
-        folder = smokeDir.path();
+        smokeDir.emplace();
+        if (!smokeDir->isValid()) {
+            std::fprintf(stderr, "Lesson Planner: could not create a temporary folder\n");
+            return 1;
+        }
+        folder = smokeDir->path();
     } else {
         folder = config::dbFolder().value_or(QString());
         if (folder.isEmpty() || !QDir(folder).exists()) {

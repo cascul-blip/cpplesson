@@ -166,10 +166,10 @@ private slots:
         writeFile(recent);
         // August 1 is outside the 30-day default; September 15 is inside it.
         // A negative or zero value must use that default, not delete both.
-        QCOMPARE(backup::prune(dir.path(), -3, today).size(), 1);
+        backup::prune(dir.path(), -3, today);
         QVERIFY(!QFile::exists(old));
         QVERIFY(QFile::exists(recent));
-        QCOMPARE(backup::prune(dir.path(), 0, today).size(), 0);
+        backup::prune(dir.path(), 0, today);
         QVERIFY(QFile::exists(recent));
     }
 
